@@ -67,7 +67,9 @@ class Packet:
         If encrypted, returns ciphertext representation demonstrating TLS confidentiality.
         """
         if self.is_encrypted:
-            return "🔒 [ENCRYPTED SSL/TLS CIPHERTEXT - UNREADABLE TO MITM ATTACKER]"
+            import hashlib
+            h = hashlib.sha256(self.payload.encode("utf-8")).hexdigest().upper()
+            return f"🔒 AES-256-GCM Ciphertext:\n0x7F4A{h[:32]}\n0x{h[32:]}E9F1"
         return self.payload
 
     def to_dict(self) -> Dict[str, Any]:
