@@ -1,103 +1,79 @@
 """
-dashboard/app.py - Streamlit Interactive UI for SilentSnare MITM Attack Simulation & Detection.
+dashboard/app.py - Streamlit Interactive UI for SilentSnare MITM Simulation.
+Features dual scenarios, before/after ARP table comparisons, and an animated SVG packet path.
 """
 
 import sys
 import os
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
-import networkx as nx
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 
-# Add parent directory to sys.path to allow core and data imports
+# Add parent directory to path to import core and data modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from core.simulator import SimulatorEngine
 from data.logs import EventLogger
 
-# Streamlit Page Config
+# Page Configuration
 st.set_page_config(
-    page_title="SilentSnare - MITM Attack Simulation System",
+    page_title="SilentSnare - MITM Simulation Platform",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom Cyber-Security Dark Theme CSS
+# Custom Cyber Dark Theme CSS
 CUSTOM_CSS = """
 <style>
-    /* Global Styles */
     .stApp {
         background-color: #0b0e14;
         color: #e2e8f0;
     }
-    
-    /* Header Styling */
-    .title-banner {
-        background: linear-gradient(135deg, #1e1b4b 0%, #0f172a 50%, #311b92 100%);
+    .main-banner {
+        background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311b92 100%);
         border: 1px solid #4338ca;
         border-radius: 12px;
-        padding: 24px;
-        margin-bottom: 24px;
-        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.15);
+        padding: 20px 24px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 20px rgba(99, 102, 241, 0.2);
     }
-    
-    .title-banner h1 {
-        color: #6366f1;
-        margin: 0;
+    .main-banner h1 {
+        color: #818cf8;
         font-family: 'Inter', sans-serif;
         font-weight: 800;
-        letter-spacing: -0.5px;
+        margin: 0 0 6px 0;
+        font-size: 2.2rem;
     }
-    
-    .title-banner p {
+    .main-banner p {
         color: #94a3b8;
-        margin-top: 6px;
-        margin-bottom: 0;
+        margin: 0;
         font-size: 1.05rem;
     }
-
-    /* Metric Cards */
-    .metric-card {
+    .card-box {
         background-color: #161b22;
         border: 1px solid #30363d;
         border-radius: 10px;
         padding: 16px;
-        text-align: center;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        margin-bottom: 16px;
     }
-    .metric-card h3 {
-        color: #8b949e;
-        font-size: 0.85rem;
-        text-transform: uppercase;
-        margin-bottom: 4px;
-    }
-    .metric-card p {
-        color: #58a6ff;
-        font-size: 1.8rem;
-        font-weight: 700;
-        margin: 0;
-    }
-
-    /* Status Badges */
-    .badge-active {
+    .badge-poisoned {
         background-color: #7f1d1d;
         color: #f87171;
         border: 1px solid #ef4444;
-        padding: 4px 12px;
-        border-radius: 20px;
+        padding: 4px 10px;
+        border-radius: 12px;
         font-weight: 700;
-        display: inline-block;
+        font-size: 0.85rem;
     }
-    .badge-inactive {
+    .badge-authentic {
         background-color: #064e3b;
         color: #34d399;
         border: 1px solid #10b981;
-        padding: 4px 12px;
-        border-radius: 20px;
+        padding: 4px 10px;
+        border-radius: 12px;
         font-weight: 700;
-        display: inline-block;
+        font-size: 0.85rem;
     }
 </style>
 """
@@ -111,300 +87,456 @@ def get_logger():
 
 logger = get_logger()
 
-# Initialize SimulatorEngine in session state
-if "simulator" not in st.session_state:
-    st.session_state.simulator = SimulatorEngine(logger=logger)
+if "sim" not in st.session_state:
+    st.session_state.sim = SimulatorEngine(logger=logger)
+    st.session_state.active_packet = None
+    st.session_state.last_path_type = "direct"
+    st.session_state.last_scenario = "s1"
 
-sim: SimulatorEngine = st.session_state.simulator
+sim: SimulatorEngine = st.session_state.sim
 
-# Header Banner
+# Helper to render Animated SVG Packet Component
+def render_animated_packet_diagram(scenario: str, path_type: str, is_encrypted: bool, is_tampered: bool, trigger_id: int):
+    """
+    Renders an HTML/SVG viewport where a glowing packet dot visibly travels
+    along the path from sender -> (attacker if active) -> receiver.
+    """
+    # Color logic
+    if is_encrypted:
+        packet_color = "#FFD700"  # Gold for SSL/TLS
+        glow_color = "rgba(255, 215, 0, 0.8)"
+        packet_symbol = "🔒"
+    elif is_tampered or path_type == "intercepted":
+        packet_color = "#FF4B4B"  # Red for Intercepted/Tampered
+        glow_color = "rgba(255, 75, 75, 0.8)"
+        packet_symbol = "⚠️"
+    else:
+        packet_color = "#00F2FE"  # Cyan for Clean
+        glow_color = "rgba(0, 242, 254, 0.8)"
+        packet_symbol = "✉️"
+
+    if scenario == "s1":
+        # Scenario 1 Nodes
+        node_a = {"label": "Computer A (Abdullah)", "x": 90, "y": 140, "color": "#10B981"}
+        attacker = {"label": "Attacker (Anonymous)", "x": 300, "y": 45, "color": "#EF4444" if path_type == "intercepted" else "#64748B"}
+        node_b = {"label": "Computer B (Umer)", "x": 510, "y": 140, "color": "#3B82F6"}
+
+        if path_type == "intercepted":
+            path_d = f"M {node_a['x']} {node_a['y']} L {attacker['x']} {attacker['y']} L {node_b['x']} {node_b['y']}"
+            line_color = "#EF4444"
+        else:
+            path_d = f"M {node_a['x']} {node_a['y']} L {node_b['x']} {node_b['y']}"
+            line_color = "#10B981"
+
+        nodes_xml = f"""
+            <circle cx="{node_a['x']}" cy="{node_a['y']}" r="26" fill="{node_a['color']}" />
+            <text x="{node_a['x']}" y="{node_a['y']+42}" text-anchor="middle" fill="#FFFFFF" font-size="12" font-weight="bold">{node_a['label']}</text>
+
+            <circle cx="{attacker['x']}" cy="{attacker['y']}" r="26" fill="{attacker['color']}" />
+            <text x="{attacker['x']}" y="{attacker['y']-34}" text-anchor="middle" fill="#FFFFFF" font-size="12" font-weight="bold">{attacker['label']}</text>
+
+            <circle cx="{node_b['x']}" cy="{node_b['y']}" r="26" fill="{node_b['color']}" />
+            <text x="{node_b['x']}" y="{node_b['y']+42}" text-anchor="middle" fill="#FFFFFF" font-size="12" font-weight="bold">{node_b['label']}</text>
+        """
+    else:
+        # Scenario 2 Nodes (Email via Gateway)
+        victim = {"label": "Victim (Abdullah)", "x": 80, "y": 140, "color": "#10B981"}
+        attacker = {"label": "Attacker (Anonymous)", "x": 300, "y": 40, "color": "#EF4444" if path_type == "intercepted" else "#64748B"}
+        router = {"label": "Gateway Router", "x": 300, "y": 210, "color": "#3B82F6"}
+        server = {"label": "Mail Server (Umer)", "x": 520, "y": 140, "color": "#8B5CF6"}
+
+        if path_type == "intercepted":
+            path_d = f"M {victim['x']} {victim['y']} L {attacker['x']} {attacker['y']} L {router['x']} {router['y']} L {server['x']} {server['y']}"
+            line_color = "#EF4444"
+        else:
+            path_d = f"M {victim['x']} {victim['y']} L {router['x']} {router['y']} L {server['x']} {server['y']}"
+            line_color = "#10B981"
+
+        nodes_xml = f"""
+            <circle cx="{victim['x']}" cy="{victim['y']}" r="24" fill="{victim['color']}" />
+            <text x="{victim['x']}" y="{victim['y']+40}" text-anchor="middle" fill="#FFFFFF" font-size="11" font-weight="bold">{victim['label']}</text>
+
+            <circle cx="{attacker['x']}" cy="{attacker['y']}" r="24" fill="{attacker['color']}" />
+            <text x="{attacker['x']}" y="{attacker['y']-32}" text-anchor="middle" fill="#FFFFFF" font-size="11" font-weight="bold">{attacker['label']}</text>
+
+            <circle cx="{router['x']}" cy="{router['y']}" r="24" fill="{router['color']}" />
+            <text x="{router['x']}" y="{router['y']+38}" text-anchor="middle" fill="#FFFFFF" font-size="11" font-weight="bold">{router['label']}</text>
+
+            <circle cx="{server['x']}" cy="{server['y']}" r="24" fill="{server['color']}" />
+            <text x="{server['x']}" y="{server['y']+40}" text-anchor="middle" fill="#FFFFFF" font-size="11" font-weight="bold">{server['label']}</text>
+        """
+
+    html_code = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{
+                margin: 0;
+                background-color: #0d1117;
+                font-family: 'Inter', sans-serif;
+                overflow: hidden;
+            }}
+            .svg-container {{
+                width: 100%;
+                height: 290px;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            }}
+            .path-line {{
+                stroke: {line_color};
+                stroke-width: 3;
+                stroke-dasharray: 6;
+                animation: dash 20s linear infinite;
+            }}
+            @keyframes dash {{
+                to {{ stroke-dashoffset: -1000; }}
+            }}
+            .packet-dot {{
+                fill: {packet_color};
+                filter: drop-shadow(0px 0px 8px {glow_color});
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="svg-container">
+            <svg width="600" height="280" viewBox="0 0 600 280">
+                <!-- Background Connection Path -->
+                <path id="anim-path-{trigger_id}" class="path-line" d="{path_d}" fill="none" />
+                
+                <!-- Network Nodes -->
+                {nodes_xml}
+
+                <!-- Traveling Packet Icon -->
+                <g>
+                    <circle r="12" class="packet-dot">
+                        <animateMotion 
+                            path="{path_d}" 
+                            dur="1.8s" 
+                            repeatCount="1" 
+                            fill="freeze" 
+                            calcMode="linear" />
+                    </circle>
+                    <text font-size="10" text-anchor="middle" dy="4" fill="#000000">
+                        {packet_symbol}
+                        <animateMotion path="{path_d}" dur="1.8s" repeatCount="1" fill="freeze" calcMode="linear" />
+                    </text>
+                </g>
+            </svg>
+        </div>
+    </body>
+    </html>
+    """
+    components.html(html_code, height=300)
+
+
+# Title Banner
 st.markdown("""
-<div class="title-banner">
-    <h1>🛡️ SilentSnare: MITM Attack Simulation & Detection Platform</h1>
-    <p>Educational interactive environment modeling ARP Cache Poisoning, Man-in-the-Middle packet inspection, payload modification, and TLS/SSL security validation.</p>
+<div class="main-banner">
+    <h1>🛡️ SilentSnare: Educational MITM Attack Simulation</h1>
+    <p>Pure software simulation demonstrating ARP Cache Poisoning, Packet Interception, Payload Alteration, and SSL/TLS Security Protections.</p>
 </div>
 """, unsafe_allow_html=True)
 
 
-# Sidebar Controls
-st.sidebar.title("🎮 Attack Control Panel")
+# Sidebar Configuration
+st.sidebar.title("🎛️ Session Controls")
 
-attacker_dev = sim.devices["attacker"]
-is_poisoning = attacker_dev.is_poisoning
-
-# Attack Toggle Button
-st.sidebar.subheader("ARP Poisoning Status")
-if is_poisoning:
-    st.sidebar.markdown('<div class="badge-active">⚠️ ATTACK ACTIVE (ARP POISONED)</div>', unsafe_allow_html=True)
-    if st.sidebar.button("🛑 Terminate Attack (Restore ARP)", use_container_width=True):
-        sim.stop_arp_spoof()
-        st.rerun()
-else:
-    st.sidebar.markdown('<div class="badge-inactive">🛡️ CLEAN (NORMAL ROUTING)</div>', unsafe_allow_html=True)
-    if st.sidebar.button("⚔️ Launch ARP Spoofing Attack", use_container_width=True):
-        sim.start_arp_spoof()
-        st.rerun()
-
-st.sidebar.divider()
-
-# Attacker Configuration
-st.sidebar.subheader("Attacker Behavior Mode")
-intercept_mode = st.sidebar.radio(
-    "Select Interception Mode:",
-    options=["tamper", "passive", "drop"],
-    format_func=lambda x: {
-        "tamper": "✏️ Active Modification (Payload Tamper)",
-        "passive": "👁️ Passive Eavesdropping (Sniff Only)",
-        "drop": "🚫 Denial of Service (Drop Packets)"
-    }[x],
-    index=["tamper", "passive", "drop"].index(attacker_dev.intercept_mode)
-)
-attacker_dev.intercept_mode = intercept_mode
-
-st.sidebar.divider()
-if st.sidebar.button("🗑️ Clear Database Logs"):
-    logger.clear_all_logs()
-    sim.packets.clear()
-    sim.alerts.clear()
-    st.sidebar.success("Database logs wiped!")
+if st.sidebar.button("🔄 Reset Entire Simulation", use_container_width=True):
+    sim.reset_all()
+    st.session_state.active_packet = None
+    st.session_state.last_path_type = "direct"
+    st.sidebar.success("Simulation & ARP caches reset to baseline!")
     st.rerun()
 
+st.sidebar.divider()
+st.sidebar.markdown("### 📊 Live Statistics")
+st.sidebar.write(f"**Total Packets Sent:** `{len(sim.packets)}`")
+st.sidebar.write(f"**S1 Packets Intercepted:** `{sim.s1_attacker.captured_count}`")
+st.sidebar.write(f"**S2 Packets Intercepted:** `{sim.s2_attacker.captured_count}`")
+st.sidebar.write(f"**IDS Alerts Fired:** `{len(sim.alerts)}`")
 
-# Top Metrics Summary Row
-col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-with col_m1:
-    st.markdown(f"""
-    <div class="metric-card">
-        <h3>Network State</h3>
-        <p style="color: {'#ef4444' if is_poisoning else '#10b981'};">{'POISONED' if is_poisoning else 'SECURE'}</p>
-    </div>
-    """, unsafe_allow_html=True)
 
-with col_m2:
-    st.markdown(f"""
-    <div class="metric-card">
-        <h3>Packets Intercepted</h3>
-        <p style="color: #6366f1;">{attacker_dev.captured_packets_count}</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col_m3:
-    st.markdown(f"""
-    <div class="metric-card">
-        <h3>IDS Security Alerts</h3>
-        <p style="color: {'#f59e0b' if len(sim.alerts) > 0 else '#10b981'};">{len(sim.alerts)}</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-with col_m4:
-    st.markdown(f"""
-    <div class="metric-card">
-        <h3>Attacker Mode</h3>
-        <p style="color: #ec4899; font-size: 1.3rem; margin-top: 8px;">{attacker_dev.intercept_mode.upper()}</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("<br>", unsafe_allow_html=True)
-
-# Main Content Tabs
-tab_topo, tab_console, tab_inspect, tab_alerts = st.tabs([
-    "🕸️ Network Topology & ARP Tables",
-    "⚡ Packet Transmission Console",
-    "🔍 Packet Inspector & Encryption Analysis",
-    "🚨 IDS Alerts & Operational Logs"
+# Main Tabs (Scenario 1 & Scenario 2)
+tab1, tab2, tab_logs = st.tabs([
+    "💻 Scenario 1: MITM Between Two Computers",
+    "📧 Scenario 2: Email Gateway Hijacking",
+    "📜 Session Event Logs & Database"
 ])
 
-# ---------------------------------------------------------
-# TAB 1: Network Topology & ARP Tables
-# ---------------------------------------------------------
-with tab_topo:
-    st.subheader("Simulated Network Topology & Traffic Flow")
-    
-    col_graph, col_arp = st.columns([3, 2])
-    
-    with col_graph:
-        # Generate Network Diagram with NetworkX
-        fig, ax = plt.subplots(figsize=(7, 4.5))
-        fig.patch.set_facecolor('#0f172a')
-        ax.set_facecolor('#0f172a')
-        
-        G = nx.DiGraph()
-        pos = {
-            "Victim Client (Alice)": (0, 1),
-            "Gateway Router": (1, 1),
-            "Email Gateway (Bob)": (2, 1),
-            "SilentSnare Attacker": (0.5, 0)
-        }
-        
-        for node in pos:
-            G.add_node(node)
-            
-        colors = []
-        for node in G.nodes():
-            if "Attacker" in node:
-                colors.append('#ef4444' if is_poisoning else '#64748b')
-            elif "Gateway Router" in node:
-                colors.append('#3b82f6')
-            else:
-                colors.append('#10b981')
-                
-        nx.draw_networkx_nodes(G, pos, node_color=colors, node_size=2200, ax=ax)
-        nx.draw_networkx_labels(G, pos, font_color='white', font_weight='bold', font_size=8, ax=ax)
-        
-        if is_poisoning:
-            # Poisoned traffic path
-            edges_to_draw = [
-                ("Victim Client (Alice)", "SilentSnare Attacker"),
-                ("SilentSnare Attacker", "Gateway Router"),
-                ("Gateway Router", "Email Gateway (Bob)")
-            ]
-            nx.draw_networkx_edges(G, pos, edgelist=edges_to_draw, edge_color='#ef4444', width=2.5, arrowsize=18, ax=ax)
-        else:
-            # Normal traffic path
-            edges_to_draw = [
-                ("Victim Client (Alice)", "Gateway Router"),
-                ("Gateway Router", "Email Gateway (Bob)")
-            ]
-            nx.draw_networkx_edges(G, pos, edgelist=edges_to_draw, edge_color='#10b981', width=2.5, arrowsize=18, ax=ax)
-            
-        plt.title("Live Traffic Flow Diagram", color='#94a3b8', fontsize=12)
-        plt.axis('off')
-        st.pyplot(fig, use_container_width=True)
-        
-    with col_arp:
-        st.subheader("Live ARP Cache Inspection")
-        st.caption("Inspect local IP-to-MAC resolution tables across LAN endpoints.")
-        
-        arp_records = []
-        for name, dev in sim.devices.items():
-            for target_ip, mac_addr in dev.arp_table.items():
-                is_compromised = (name == "victim_client" and target_ip == sim.devices["router"].ip and mac_addr == attacker_dev.mac)
-                arp_records.append({
-                    "Device": dev.hostname,
-                    "Target IP": target_ip,
-                    "Resolved MAC": mac_addr,
-                    "Status": "⚠️ POISONED" if is_compromised else "AUTHENTIC"
-                })
-        
-        df_arp = pd.DataFrame(arp_records)
-        st.dataframe(df_arp, use_container_width=True, hide_index=True)
+# =====================================================================
+# TAB 1: Scenario 1 - MITM Between Two Computers
+# =====================================================================
+with tab1:
+    st.subheader("Scenario 1: Man-in-the-Middle Between Computer A & Computer B")
+    st.caption("Step through the attack lifecycle to see how ARP spoofing redirects traffic through the Attacker.")
 
+    # Control Buttons Row
+    c1, c2, c3, c4, c5 = st.columns(5)
 
-# ---------------------------------------------------------
-# TAB 2: Packet Transmission Console
-# ---------------------------------------------------------
-with tab_console:
-    st.subheader("Transmit Test Packets Across LAN")
-    
-    col_p1, col_p2 = st.columns([1, 1])
-    
-    with col_p1:
-        st.write("##### Configure Packet Settings")
-        
-        preset_choice = st.selectbox(
-            "Quick Presets:",
-            options=[
-                "Unsecured HTTP Login (Plaintext)",
-                "Secured HTTPS Login (SSL/TLS Encrypted)",
-                "Unsecured SMTP Email Payload",
-                "Custom Payload"
-            ]
-        )
-        
-        if preset_choice == "Unsecured HTTP Login (Plaintext)":
-            default_proto = "HTTP"
-            default_payload = "POST /login credentials=user123:Password123!"
-            default_encrypted = False
-        elif preset_choice == "Secured HTTPS Login (SSL/TLS Encrypted)":
-            default_proto = "HTTPS"
-            default_payload = "POST /api/v1/auth bearer_token=eyJhbGciOiJIUzI1Ni..."
-            default_encrypted = True
-        elif preset_choice == "Unsecured SMTP Email Payload":
-            default_proto = "SMTP"
-            default_payload = "MAIL FROM:<alice@company.com> BODY: Confidential Q3 financial draft."
-            default_encrypted = False
-        else:
-            default_proto = "HTTP"
-            default_payload = "Hello World Payload"
-            default_encrypted = False
-
-        protocol = st.text_input("Protocol:", value=default_proto)
-        payload_text = st.text_area("Payload Data:", value=default_payload, height=100)
-        is_encrypted_flag = st.checkbox("🔒 Enable SSL/TLS Encryption (HTTPS)", value=default_encrypted)
-        
-        if st.button("🚀 Transmit Packet Now", type="primary", use_container_width=True):
-            pkt = sim.send_packet(
-                src_key="victim_client",
-                dst_key="victim_server",
-                protocol=protocol,
-                payload=payload_text,
-                is_encrypted=is_encrypted_flag
+    with c1:
+        if st.button("1️⃣ Normal Direct Packet", use_container_width=True):
+            st.session_state.active_packet = sim.s1_normal_communication(
+                payload="Hello Umer! Secret Passcode: 9876",
+                protocol="HTTP"
             )
-            st.success(f"Packet {pkt.id} transmitted! Status: {pkt.status}")
+            st.session_state.last_path_type = "direct"
+            st.session_state.last_scenario = "s1"
             st.rerun()
 
-    with col_p2:
-        st.write("##### Last Transmitted Packet Result")
-        if sim.packets:
-            last_pkt = sim.packets[-1]
-            
-            st.info(f"**Packet ID:** `{last_pkt.id}` | **Time:** `{last_pkt.timestamp}`")
-            st.write(f"**Route Hops:** `{' -> '.join(last_pkt.hop_history)}`")
-            st.write(f"**Transmission Status:** `{last_pkt.status}`")
-            
-            if last_pkt.is_encrypted:
-                st.markdown("🔒 **Security Note:** SSL/TLS encryption prevented payload reading or alteration.")
-            elif last_pkt.is_tampered:
-                st.error("⚠️ **MITM Alteration Detected:** Payload was modified in-transit!")
-                st.code(f"Original: {last_pkt.original_payload}\nModified: {last_pkt.payload}", language="text")
-            else:
-                st.write("**Payload Delivered:**")
-                st.code(last_pkt.payload, language="text")
-        else:
-            st.write("No packets transmitted yet in this session.")
+    with c2:
+        if st.button("2️⃣ Execute ARP Spoofing", use_container_width=True):
+            alerts = sim.s1_arp_spoof()
+            st.session_state.last_scenario = "s1"
+            if alerts:
+                st.toast("🚨 IDS Alert: ARP Cache Poisoning Detected!", icon="⚠️")
+            st.rerun()
 
+    with c3:
+        if st.button("3️⃣ Intercept & Modify Message", use_container_width=True):
+            st.session_state.active_packet = sim.s1_intercepted_communication(
+                payload="Hello Umer! Secret Passcode: 9876",
+                protocol="HTTP",
+                is_encrypted=False,
+                modified_payload="Hello Umer! TRANSFER $10,000 to Anonymous Account #666"
+            )
+            st.session_state.last_path_type = "intercepted"
+            st.session_state.last_scenario = "s1"
+            st.rerun()
 
-# ---------------------------------------------------------
-# TAB 3: Packet Inspector & Encryption Analysis
-# ---------------------------------------------------------
-with tab_inspect:
-    st.subheader("Captured Packet Logs & Comparative Security Analysis")
-    
-    st.markdown("""
-    > **Educational Context:** Compare how unencrypted protocols (HTTP/SMTP) allow full MITM inspection and payload modification, whereas secured protocols (HTTPS/TLS) protect data confidentiality.
-    """)
-    
-    db_packets = logger.get_packets()
-    if db_packets:
-        df_pkts = pd.DataFrame(db_packets)
+    with c4:
+        if st.button("4️⃣ Send SSL/TLS Encrypted", use_container_width=True):
+            st.session_state.active_packet = sim.s1_intercepted_communication(
+                payload="Hello Umer! Secret Passcode: 9876",
+                protocol="HTTPS",
+                is_encrypted=True
+            )
+            st.session_state.last_path_type = "intercepted"
+            st.session_state.last_scenario = "s1"
+            st.rerun()
+
+    with c5:
+        if st.button("5️⃣ Restore Clean ARP", use_container_width=True):
+            sim.s1_restore_arp()
+            st.session_state.last_path_type = "direct"
+            st.session_state.last_scenario = "s1"
+            st.success("Authentic ARP tables restored for Computer A & B!")
+            st.rerun()
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Animated Visualization Component
+    col_vis, col_pkt = st.columns([3, 2])
+
+    with col_vis:
+        st.write("##### 🎞️ Real-Time Packet Path Animation")
+        pkt = st.session_state.active_packet
+        is_enc = pkt.is_encrypted if pkt else False
+        is_tam = pkt.is_tampered if pkt else False
+        path_t = st.session_state.last_path_type
         
+        render_animated_packet_diagram(
+            scenario="s1",
+            path_type=path_t,
+            is_encrypted=is_enc,
+            is_tampered=is_tam,
+            trigger_id=sim.trigger_count
+        )
+
+    with col_pkt:
+        st.write("##### 🔍 Active Packet Detail View")
+        if pkt and pkt.scenario_type == "computer_mitm":
+            st.markdown(f"""
+            <div class="card-box">
+                <p><b>Packet ID:</b> <code>{pkt.id}</code> | <b>Timestamp:</b> <code>{pkt.timestamp}</code></p>
+                <p><b>Protocol:</b> <code>{pkt.protocol}</code> | <b>Encrypted:</b> {'🔒 YES (TLS)' if pkt.is_encrypted else '🔓 NO (Plaintext)'}</p>
+
+            <p><b>Route Hops:</b> <code>{' ➔ '.join(pkt.hop_history)}</code></p>
+                <p><b>Status:</b> <code>{pkt.status}</code></p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if pkt.is_encrypted:
+                st.warning("🔒 **SSL/TLS Security Active:** Attacker intercepted packet frame, but payload is encrypted ciphertext and unreadable.")
+                st.code(pkt.get_display_content(), language="text")
+            elif pkt.is_tampered:
+                st.error("⚠️ **MITM Alteration Alert:** Attacker read and modified plaintext payload!")
+                st.code(f"Original: {pkt.original_payload}\nAltered:  {pkt.payload}", language="text")
+            else:
+                st.success("✅ **Clean Payload Received:**")
+                st.code(pkt.payload, language="text")
+        else:
+            st.info("Click an action button above to trigger packet transmission.")
+
+    st.divider()
+
+    # Before & After ARP Table Comparison
+    st.subheader("📋 ARP Table State (Before vs After Spoofing)")
+    col_arp_a, col_arp_b = st.columns(2)
+
+    with col_arp_a:
+        st.write("##### Computer A ARP Cache")
+        df_arp_a = pd.DataFrame(sim.comp_a.get_arp_comparison())
+        st.dataframe(df_arp_a, use_container_width=True, hide_index=True)
+
+    with col_arp_b:
+        st.write("##### Computer B ARP Cache")
+        df_arp_b = pd.DataFrame(sim.comp_b.get_arp_comparison())
+        st.dataframe(df_arp_b, use_container_width=True, hide_index=True)
+
+
+# =====================================================================
+# TAB 2: Scenario 2 - Email Gateway Hijacking
+# =====================================================================
+with tab2:
+    st.subheader("Scenario 2: Email Hijacking via Gateway Spoofing")
+    st.caption("Demonstrates how poisoning a victim's Gateway Router ARP entry allows the Attacker to intercept outbound emails.")
+
+    # Control Buttons Row
+    e1, e2, e3, e4, e5 = st.columns(5)
+
+    with e1:
+        if st.button("1️⃣ Normal Email Flow", use_container_width=True):
+            st.session_state.active_packet = sim.s2_normal_email(
+                subject="Q3 Payroll Draft",
+                body="Please disburse $50,000 team bonus.",
+                sender="abdullah@company.com",
+                recipient="umer@company.com"
+            )
+            st.session_state.last_path_type = "direct"
+            st.session_state.last_scenario = "s2"
+            st.rerun()
+
+    with e2:
+        if st.button("2️⃣ Spoof Gateway ARP", use_container_width=True):
+            alerts = sim.s2_gateway_spoof()
+            st.session_state.last_scenario = "s2"
+            if alerts:
+                st.toast("🚨 IDS Alert: Gateway Impersonation Detected!", icon="⚠️")
+            st.rerun()
+
+    with e3:
+        if st.button("3️⃣ Intercept & Alter Email", use_container_width=True):
+            st.session_state.active_packet = sim.s2_intercepted_email(
+                subject="Q3 Payroll Draft",
+                body="Please disburse $50,000 team bonus.",
+                sender="abdullah@company.com",
+                recipient="umer@company.com",
+                protocol="SMTP",
+                is_encrypted=False,
+                modified_body="HIJACKED BY ANONYMOUS: Wire $50,000 funds to offshore account #998877!"
+            )
+            st.session_state.last_path_type = "intercepted"
+            st.session_state.last_scenario = "s2"
+            st.rerun()
+
+    with e4:
+        if st.button("4️⃣ Send SMTPS Encrypted Email", use_container_width=True):
+            st.session_state.active_packet = sim.s2_intercepted_email(
+                subject="Q3 Payroll Draft",
+                body="Please disburse $50,000 team bonus.",
+                sender="abdullah@company.com",
+                recipient="umer@company.com",
+                protocol="SMTPS",
+                is_encrypted=True
+            )
+            st.session_state.last_path_type = "intercepted"
+            st.session_state.last_scenario = "s2"
+            st.rerun()
+
+    with e5:
+        if st.button("5️⃣ Restore Gateway ARP", use_container_width=True):
+            sim.s2_restore_arp()
+            st.session_state.last_path_type = "direct"
+            st.session_state.last_scenario = "s2"
+            st.success("Authentic Gateway ARP restored!")
+            st.rerun()
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # Animated Email Viewport
+    col_e_vis, col_e_pkt = st.columns([3, 2])
+
+    with col_e_vis:
+        st.write("##### 🎞️ Email Gateway Routing Animation")
+        pkt_e = st.session_state.active_packet
+        is_enc_e = pkt_e.is_encrypted if pkt_e else False
+        is_tam_e = pkt_e.is_tampered if pkt_e else False
+        path_t_e = st.session_state.last_path_type
+
+        render_animated_packet_diagram(
+            scenario="s2",
+            path_type=path_t_e,
+            is_encrypted=is_enc_e,
+            is_tampered=is_tam_e,
+            trigger_id=sim.trigger_count
+        )
+
+    with col_e_pkt:
+        st.write("##### 📧 Email Packet Inspection")
+        if pkt_e and pkt_e.scenario_type == "email_gateway":
+            st.markdown(f"""
+            <div class="card-box">
+                <p><b>Email Subject:</b> <code>{pkt_e.email_subject}</code></p>
+                <p><b>Protocol:</b> <code>{pkt_e.protocol}</code> | <b>Encrypted:</b> {'🔒 YES (SMTPS/TLS)' if pkt_e.is_encrypted else '🔓 NO (SMTP Plaintext)'}</p>
+                <p><b>Route Hops:</b> <code>{' ➔ '.join(pkt_e.hop_history)}</code></p>
+                <p><b>Status:</b> <code>{pkt_e.status}</code></p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if pkt_e.is_encrypted:
+                st.warning("🔒 **SMTPS Security Active:** Gateway Attacker intercepted packet, but SMTPS/TLS encryption blocked email reading & body alteration.")
+                st.code(pkt_e.get_display_content(), language="text")
+            elif pkt_e.is_tampered:
+                st.error("⚠️ **Email Body Hijacked:** Attacker altered email contents in-transit!")
+                st.code(f"Original Email: {pkt_e.original_payload}\nAltered Email:  {pkt_e.payload}", language="text")
+            else:
+                st.success("✅ **Clean Email Delivered to Mail Server:**")
+                st.code(pkt_e.payload, language="text")
+        else:
+            st.info("Click an action button above to transmit an email packet.")
+
+    st.divider()
+
+    # Victim Gateway ARP Cache Inspection
+    st.subheader("📋 Victim Gateway ARP Cache State (Before vs After)")
+    df_arp_victim = pd.DataFrame(sim.email_victim.get_arp_comparison())
+    st.dataframe(df_arp_victim, use_container_width=True, hide_index=True)
+
+
+# =====================================================================
+# TAB 3: Session Event Logs & Database
+# =====================================================================
+with tab_logs:
+    st.subheader("📜 Live Event Logs & Security Audit History")
+
+    # IDS Alerts Section
+    st.write("##### 🚨 Intrusion Detection System (IDS) Alerts")
+    alerts_list = logger.get_alerts()
+    if alerts_list:
+        for al in alerts_list:
+            st.error(f"**[{al['timestamp']}] {al['type']} (Severity: {al['severity']})**")
+            st.write(f"• **Details:** {al['details']}")
+            st.write(f"• **Countermeasure:** `{al['recommendation']}`")
+            st.divider()
+    else:
+        st.success("✅ No security alerts detected.")
+
+    st.write("##### 📦 All Captured Session Packets")
+    pkt_list = logger.get_packets()
+    if pkt_list:
+        df_p = pd.DataFrame(pkt_list)
         st.dataframe(
-            df_pkts[["id", "timestamp", "protocol", "src_ip", "dst_ip", "status", "is_encrypted", "is_tampered", "payload"]],
+            df_p[["id", "timestamp", "scenario_type", "protocol", "sender", "receiver", "status", "is_encrypted", "is_tampered", "display_payload"]],
             use_container_width=True,
             hide_index=True
         )
     else:
-        st.info("No captured packet history found in database.")
+        st.info("No packets captured yet in this session.")
 
-
-# ---------------------------------------------------------
-# TAB 4: IDS Alerts & Operational Logs
-# ---------------------------------------------------------
-with tab_alerts:
-    st.subheader("Real-Time Intrusion Detection System (IDS) Alerts")
-    
-    alerts = logger.get_alerts()
-    if alerts:
-        for al in alerts:
-            st.error(f"🚨 **[{al['timestamp']}] {al['type']} (Severity: {al['severity']})**")
-            st.write(f"**Details:** {al['details']}")
-            st.write(f"**Recommended Countermeasure:** `{al['recommendation']}`")
-            st.divider()
-    else:
-        st.success("✅ No ARP Poisoning anomalies currently flagged by IDS.")
-        
-    st.subheader("System Event Log")
-    events = logger.get_events()
-    if events:
-        df_events = pd.DataFrame(events)
-        st.dataframe(df_events[["timestamp", "category", "message"]], use_container_width=True, hide_index=True)
+    st.write("##### ⚙️ System Operational Logs")
+    events_list = logger.get_events()
+    if events_list:
+        df_ev = pd.DataFrame(events_list)
+        st.dataframe(df_ev[["timestamp", "category", "message"]], use_container_width=True, hide_index=True)
