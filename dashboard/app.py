@@ -628,7 +628,7 @@ with tab1:
     render_message_encryption_cards(pkt, scenario_type="computer_mitm")
     st.divider()
 
-    st.subheader("📋 ARP Table State (Before vs After Spoofing)")
+    st.subheader("📋 Active Live ARP Cache Tables")
     col_arp_a, col_arp_b = st.columns(2)
 
     with col_arp_a:
@@ -770,7 +770,7 @@ with tab2:
     render_message_encryption_cards(pkt_e, scenario_type="email_gateway")
     st.divider()
 
-    st.subheader("📋 Victim Gateway ARP Cache State (Before vs After)")
+    st.subheader("📋 Active Victim ARP Cache Table")
     df_arp_victim = pd.DataFrame(sim.email_victim.get_arp_comparison())
     st.dataframe(df_arp_victim, use_container_width=True, hide_index=True)
 

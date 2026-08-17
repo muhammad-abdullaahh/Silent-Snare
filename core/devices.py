@@ -42,10 +42,9 @@ class NetworkDevice:
                 "Device": self.name,
                 "Device IP": self.ip,
                 "Target IP": target_ip,
-                "Current MAC (After)": current_mac,
-                "Original MAC (Before)": original_mac,
-                "Is Poisoned": is_poisoned,
-                "Status": "⚠️ POISONED" if is_poisoned else "AUTHENTIC"
+                "MAC Address": current_mac,
+                "Original MAC (Baseline)": original_mac,
+                "Status": "⚠️ POISONED (Spoofed)" if is_poisoned else "AUTHENTIC"
             })
         return records
 
