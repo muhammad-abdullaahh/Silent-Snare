@@ -1,23 +1,24 @@
-"""
-data/logs.py - Pure in-memory and SQLite logger for SilentSnare MITM Simulator.
-"""
-
 import sqlite3
 import os
 import time
+import logging
 from typing import List, Dict, Any
 
 
 class EventLogger:
     """
-    Manages in-memory log queues and optional SQLite database persistence
-    for captured packets, security alerts, and system events.
+    Handles in-memory log management and SQLite database persistence
+    for captured packets, security alerts, and system logs.
     """
+
     def __init__(self, db_path: str = "data/silentsnare.db"):
         self.db_path = db_path
-        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         
-        # Fast in-memory storage buffers
+        # Ensure target database directory exists
+        db_dir = os.path.dirname(self.db_path)
+        if db_dir:
+            os.makedirs(db_dir, exist_ok=True)
+
         self.memory_packets: List[Dict[str, Any]] = []
         self.memory_alerts: List[Dict[str, Any]] = []
         self.memory_events: List[Dict[str, Any]] = []
@@ -25,62 +26,65 @@ class EventLogger:
         self.init_db()
 
     def get_connection(self) -> sqlite3.Connection:
-        """Establish SQLite database connection."""
+        """Returns a new SQLite database connection with row factory configured."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
     def get_time_str(self) -> str:
-        """Return current timestamp string."""
+        """Returns formatted timestamp string."""
         return time.strftime("%Y-%m-%d %H:%M:%S")
 
     def init_db(self) -> None:
-        """Initialize clean SQLite schema."""
-        with self.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS packets (
-                    id TEXT PRIMARY KEY,
-                    timestamp TEXT,
-                    sender TEXT,
-                    receiver TEXT,
-                    protocol TEXT,
-                    display_payload TEXT,
-                    raw_payload TEXT,
-                    original_payload TEXT,
-                    is_encrypted INTEGER,
-                    is_tampered INTEGER,
-                    status TEXT,
-                    intercepted_by TEXT,
-                    hops TEXT,
-                    scenario_type TEXT,
-                    email_subject TEXT
-                )
-            """)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS alerts (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp TEXT,
-                    severity TEXT,
-                    type TEXT,
-                    details TEXT,
-                    recommendation TEXT
-                )
-            """)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS events (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp TEXT,
-                    category TEXT,
-                    message TEXT
-                )
-            """)
-            conn.commit()
+        """Creates SQLite tables for packets, security alerts, and events if missing."""
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS packets (
+                        id TEXT PRIMARY KEY,
+                        timestamp TEXT,
+                        sender TEXT,
+                        receiver TEXT,
+                        protocol TEXT,
+                        display_payload TEXT,
+                        raw_payload TEXT,
+                        original_payload TEXT,
+                        is_encrypted INTEGER,
+                        is_tampered INTEGER,
+                        status TEXT,
+                        intercepted_by TEXT,
+                        hops TEXT,
+                        scenario_type TEXT,
+                        email_subject TEXT
+                    )
+                """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS alerts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TEXT,
+                        severity TEXT,
+                        type TEXT,
+                        details TEXT,
+                        recommendation TEXT
+                    )
+                """)
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp TEXT,
+                        category TEXT,
+                        message TEXT
+                    )
+                """)
+                conn.commit()
+        except sqlite3.Error as err:
+            logging.error(f"Database initialization failed: {err}")
 
     def log_packet(self, packet_dict: Dict[str, Any]) -> None:
-        """Log packet to in-memory list and SQLite database."""
-        self.memory_packets.insert(0, packet_dict)  # prepend latest first
-        
+        """Logs packet information into memory and SQLite database."""
+        self.memory_packets.insert(0, packet_dict)
+
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -107,11 +111,11 @@ class EventLogger:
                     packet_dict.get("email_subject")
                 ))
                 conn.commit()
-        except Exception:
-            pass
+        except sqlite3.Error as err:
+            logging.error(f"Failed to log packet to database: {err}")
 
     def log_alert(self, alert_dict: Dict[str, Any]) -> None:
-        """Log security detection alert."""
+        """Logs security detection alert to memory and database."""
         self.memory_alerts.insert(0, alert_dict)
         try:
             with self.get_connection() as conn:
@@ -127,11 +131,11 @@ class EventLogger:
                     alert_dict.get("recommendation", "")
                 ))
                 conn.commit()
-        except Exception:
-            pass
+        except sqlite3.Error as err:
+            logging.error(f"Failed to log alert to database: {err}")
 
     def log_event(self, category: str, message: str) -> None:
-        """Log operational system event."""
+        """Logs system operations into memory and database."""
         event_entry = {"timestamp": self.get_time_str(), "category": category, "message": message}
         self.memory_events.insert(0, event_entry)
         try:
@@ -142,23 +146,23 @@ class EventLogger:
                     VALUES (?, ?, ?)
                 """, (event_entry["timestamp"], category, message))
                 conn.commit()
-        except Exception:
-            pass
+        except sqlite3.Error as err:
+            logging.error(f"Failed to log event to database: {err}")
 
     def get_packets(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Return recent captured packet records."""
+        """Returns recent packet entries."""
         return self.memory_packets[:limit]
 
     def get_alerts(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Return IDS security alerts."""
+        """Returns recent security alert entries."""
         return self.memory_alerts[:limit]
 
     def get_events(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Return system operational logs."""
+        """Returns recent system log entries."""
         return self.memory_events[:limit]
 
     def clear_all_logs(self) -> None:
-        """Wipe memory queues and database tables."""
+        """Clears memory buffers and deletes database records."""
         self.memory_packets.clear()
         self.memory_alerts.clear()
         self.memory_events.clear()
@@ -169,5 +173,5 @@ class EventLogger:
                 cursor.execute("DELETE FROM alerts")
                 cursor.execute("DELETE FROM events")
                 conn.commit()
-        except Exception:
-            pass
+        except sqlite3.Error as err:
+            logging.error(f"Failed to clear database logs: {err}")

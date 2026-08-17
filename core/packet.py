@@ -1,18 +1,15 @@
-"""
-core/packet.py - Pure in-memory Packet class for SilentSnare MITM Simulator.
-"""
-
 import time
 import uuid
+import hashlib
 from typing import List, Dict, Any, Optional
 
 
 class Packet:
     """
-    Simulated network packet frame holding sender/receiver metadata,
-    protocol information, encryption status, and payload content.
-    Tracks routing hop history and tampering audit trail.
+    Represents a network packet frame transferred between nodes.
+    Stores payload data, encryption state, and routing history.
     """
+
     def __init__(
         self,
         sender: str,
@@ -32,29 +29,30 @@ class Packet:
         self.is_encrypted = is_encrypted
         self.scenario_type = scenario_type
         self.email_subject = email_subject
-        
-        # Security & Interception audit fields
+
+        # Interception and security status
         self.is_tampered = False
         self.original_payload = payload
-        self.status = "In-Transit"  # "Delivered", "Intercepted", "Modified", "Dropped"
+        self.status = "In-Transit"
         self.intercepted_by: Optional[str] = None
         self.hop_history: List[str] = []
 
     def record_hop(self, node_name: str) -> None:
-        """Record node in routing hop history trail."""
+        """Appends a node name to the routing path history."""
         self.hop_history.append(node_name)
 
     def tamper_payload(self, new_payload: str, attacker_name: str) -> bool:
         """
-        Attempt to modify packet payload.
-        If encrypted (SSL/TLS), payload tampering is blocked.
+        Attempts to modify the packet payload.
+        Returns False if encryption prevents modification.
         """
         if self.is_encrypted:
-            # TLS integrity check fails if modified
+            # TLS encryption prevents payload modification in transit
             return False
-        
+
         if not self.is_tampered:
             self.original_payload = self.payload
+
         self.payload = new_payload
         self.is_tampered = True
         self.status = "Modified & Forwarded"
@@ -63,17 +61,17 @@ class Packet:
 
     def get_display_content(self) -> str:
         """
-        Return human-readable payload content for UI.
-        If encrypted, returns ciphertext representation demonstrating TLS confidentiality.
+        Returns display text for UI views.
+        Shows ciphertext blob if payload is encrypted.
         """
         if self.is_encrypted:
-            import hashlib
-            h = hashlib.sha256(self.payload.encode("utf-8")).hexdigest().upper()
-            return f"🔒 AES-256-GCM Ciphertext:\n0x7F4A{h[:32]}\n0x{h[32:]}E9F1"
+            digest = hashlib.sha256(self.payload.encode("utf-8")).hexdigest().upper()
+            return f"🔒 AES-256-GCM Ciphertext:\n0x7F4A{digest[:32]}\n0x{digest[32:]}E9F1"
+
         return self.payload
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert packet state to dictionary for logging and Streamlit DataFrames."""
+        """Converts packet fields to a dictionary for logging and tables."""
         return {
             "id": self.id,
             "timestamp": self.timestamp,

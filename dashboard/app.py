@@ -1,23 +1,18 @@
-"""
-dashboard/app.py - Streamlit Interactive UI for SilentSnare MITM Simulation.
-Features dual scenarios, before/after ARP table comparisons, and an animated SVG packet path.
-"""
-
 import sys
 import os
 import hashlib
-from typing import Optional, Any, List, Dict
+from typing import Optional, Any, Dict
 import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 
-# Add parent directory to path to import core and data modules
+# Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from core.simulator import SimulatorEngine
 from data.logs import EventLogger
 
-# Page Configuration
+# Streamlit Page Setup
 st.set_page_config(
     page_title="SilentSnare - MITM Simulation Platform",
     page_icon="🛡️",
@@ -25,7 +20,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom Cyber Dark Theme CSS
+# Custom Styling for Cyber Theme
 CUSTOM_CSS = """
 <style>
     .stApp {
@@ -59,24 +54,6 @@ CUSTOM_CSS = """
         padding: 16px;
         margin-bottom: 16px;
     }
-    .badge-poisoned {
-        background-color: #7f1d1d;
-        color: #f87171;
-        border: 1px solid #ef4444;
-        padding: 4px 10px;
-        border-radius: 12px;
-        font-weight: 700;
-        font-size: 0.85rem;
-    }
-    .badge-authentic {
-        background-color: #064e3b;
-        color: #34d399;
-        border: 1px solid #10b981;
-        padding: 4px 10px;
-        border-radius: 12px;
-        font-weight: 700;
-        font-size: 0.85rem;
-    }
 </style>
 """
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
@@ -84,11 +61,13 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 @st.cache_resource
 def get_logger():
+    """Returns singleton EventLogger instance."""
     return EventLogger("data/silentsnare.db")
 
 
 logger = get_logger()
 
+# Initialize Streamlit Session State
 if "sim" not in st.session_state:
     st.session_state.sim = SimulatorEngine(logger=logger)
     st.session_state.active_packet = None
@@ -99,7 +78,7 @@ if "sim" not in st.session_state:
 
 sim: SimulatorEngine = st.session_state.sim
 
-# Helper to render Animated SVG Packet Component
+
 def render_animated_packet_diagram(
     scenario: str,
     path_type: str,
@@ -109,8 +88,8 @@ def render_animated_packet_diagram(
     action_type: str = "normal"
 ):
     """
-    Renders an HTML/SVG viewport with rich dynamic animations for packet flow,
-    ARP spoofing waves, SSL/TLS shields, and payload tampering alerts.
+    Renders the SVG diagram showing packet flows, ARP poisoning waves,
+    and payload modification alerts for both network scenarios.
     """
     if scenario == "s1":
         node_a = {"label": "Computer A (Abdullah)", "x": 90, "y": 135, "color": "#10B981", "icon": "💻"}
@@ -125,17 +104,14 @@ def render_animated_packet_diagram(
         current_path = intercept_path if (path_type == "intercepted" or action_type in ["intercept", "tls"]) else direct_path
 
         nodes_html = f"""
-            <!-- Node A -->
             <circle cx="{node_a['x']}" cy="{node_a['y']}" r="26" fill="{node_a['color']}" filter="url(#glow-green)" />
             <text x="{node_a['x']}" y="{node_a['y']+4}" text-anchor="middle" font-size="16">{node_a['icon']}</text>
             <text x="{node_a['x']}" y="{node_a['y']+42}" text-anchor="middle" fill="#E2E8F0" font-size="11" font-weight="bold">{node_a['label']}</text>
 
-            <!-- Attacker Node -->
             <circle cx="{attacker['x']}" cy="{attacker['y']}" r="26" fill="{attacker['color']}" filter="url(#glow-red)" />
             <text x="{attacker['x']}" y="{attacker['y']+4}" text-anchor="middle" font-size="16">{attacker['icon']}</text>
             <text x="{attacker['x']}" y="{attacker['y']-34}" text-anchor="middle" fill="#E2E8F0" font-size="11" font-weight="bold">{attacker['label']}</text>
 
-            <!-- Node B -->
             <circle cx="{node_b['x']}" cy="{node_b['y']}" r="26" fill="{node_b['color']}" filter="url(#glow-blue)" />
             <text x="{node_b['x']}" y="{node_b['y']+4}" text-anchor="middle" font-size="16">{node_b['icon']}</text>
             <text x="{node_b['x']}" y="{node_b['y']+42}" text-anchor="middle" fill="#E2E8F0" font-size="11" font-weight="bold">{node_b['label']}</text>
@@ -153,28 +129,24 @@ def render_animated_packet_diagram(
         current_path = intercept_path if (path_type == "intercepted" or action_type in ["intercept", "tls"]) else direct_path
 
         nodes_html = f"""
-            <!-- Victim -->
             <circle cx="{victim['x']}" cy="{victim['y']}" r="24" fill="{victim['color']}" filter="url(#glow-green)" />
             <text x="{victim['x']}" y="{victim['y']+4}" text-anchor="middle" font-size="15">{victim['icon']}</text>
             <text x="{victim['x']}" y="{victim['y']+40}" text-anchor="middle" fill="#E2E8F0" font-size="11" font-weight="bold">{victim['label']}</text>
 
-            <!-- Attacker -->
             <circle cx="{attacker['x']}" cy="{attacker['y']}" r="24" fill="{attacker['color']}" filter="url(#glow-red)" />
             <text x="{attacker['x']}" y="{attacker['y']+4}" text-anchor="middle" font-size="15">{attacker['icon']}</text>
             <text x="{attacker['x']}" y="{attacker['y']-32}" text-anchor="middle" fill="#E2E8F0" font-size="11" font-weight="bold">{attacker['label']}</text>
 
-            <!-- Router -->
             <circle cx="{router['x']}" cy="{router['y']}" r="24" fill="{router['color']}" filter="url(#glow-blue)" />
             <text x="{router['x']}" y="{router['y']+4}" text-anchor="middle" font-size="15">{router['icon']}</text>
             <text x="{router['x']}" y="{router['y']+38}" text-anchor="middle" fill="#E2E8F0" font-size="11" font-weight="bold">{router['label']}</text>
 
-            <!-- Mail Server -->
             <circle cx="{server['x']}" cy="{server['y']}" r="24" fill="{server['color']}" filter="url(#glow-purple)" />
             <text x="{server['x']}" y="{server['y']+4}" text-anchor="middle" font-size="15">{server['icon']}</text>
             <text x="{server['x']}" y="{server['y']+40}" text-anchor="middle" fill="#E2E8F0" font-size="11" font-weight="bold">{server['label']}</text>
         """
 
-    # Dynamic Overlay Animations
+    # Action-specific Animation Overlays
     if action_type == "spoof":
         line_color = "#EF4444"
         line_style = "stroke-dasharray: 6; animation: dash 0.8s linear infinite;"
@@ -270,7 +242,7 @@ def render_animated_packet_diagram(
             </g>
         """
 
-    else:  # "normal"
+    else:
         line_color = "#10B981"
         line_style = "stroke-dasharray: 6; animation: dash 2s linear infinite;"
         status_bg = "#064E3B"
@@ -360,7 +332,7 @@ def render_animated_packet_diagram(
 
 
 def get_encrypted_hex_blob(payload: str) -> str:
-    """Generates a realistic AES-256-GCM ciphertext representation hex string."""
+    """Generates an AES-256 ciphertext hex string representation for the UI."""
     h1 = hashlib.sha256(payload.encode("utf-8")).hexdigest().upper()
     h2 = hashlib.md5(payload.encode("utf-8")).hexdigest().upper()
     return f"0x7F4A{h1[:24]} 0x{h1[24:48]} 0x{h2}"
@@ -368,10 +340,10 @@ def get_encrypted_hex_blob(payload: str) -> str:
 
 def render_message_encryption_cards(pkt: Optional[Any], scenario_type: str = "computer_mitm"):
     """
-    Renders 3 side-by-side cards inspecting the message payload transformation:
-    1. Sender Box (Computer A / Victim Original Message)
-    2. Network & Encryption Mechanism Box (Ciphertext / Attacker View)
-    3. Recipient Box (Computer B / Server Received & Decrypted Payload)
+    Renders 3 side-by-side inspection cards showing:
+    1. Sender Box (Client payload emission)
+    2. Network Box (Ciphertext / MITM In-Transit View)
+    3. Recipient Box (Decrypted or Tampered payload receipt)
     """
     st.markdown("### 💬 Side-by-Side Message & Encryption Mechanism Inspector")
     col1, col2, col3 = st.columns(3)
@@ -409,7 +381,7 @@ def render_message_encryption_cards(pkt: Optional[Any], scenario_type: str = "co
         </div>
         """, unsafe_allow_html=True)
 
-    # Card 2: Network & Encryption Mechanism Box
+    # Card 2: Network & Encryption Box
     with col2:
         if is_enc:
             cipher_blob = get_encrypted_hex_blob(orig_msg)
@@ -503,7 +475,7 @@ def render_message_encryption_cards(pkt: Optional[Any], scenario_type: str = "co
             """, unsafe_allow_html=True)
 
 
-# Title Banner
+# Application Main Banner
 st.markdown("""
 <div class="main-banner">
     <h1>🛡️ SilentSnare: MITM Attack Simulation</h1>
@@ -511,8 +483,7 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-
-# Sidebar Configuration
+# Sidebar Options
 st.sidebar.title("🎛️ Session Controls")
 
 if st.sidebar.button("🔄 Reset Entire Simulation", use_container_width=True):
@@ -529,29 +500,24 @@ st.sidebar.write(f"**S1 Packets Intercepted:** `{sim.s1_attacker.captured_count}
 st.sidebar.write(f"**S2 Packets Intercepted:** `{sim.s2_attacker.captured_count}`")
 st.sidebar.write(f"**IDS Alerts Fired:** `{len(sim.alerts)}`")
 
-
-# Main Tabs (Scenario 1 & Scenario 2)
+# Navigation Tabs
 tab1, tab2, tab_logs = st.tabs([
     "💻 Scenario 1: MITM Between Two Computers",
     "📧 Scenario 2: Email Gateway Hijacking",
     "📜 Session Event Logs & Database"
 ])
 
-# =====================================================================
-# TAB 1: Scenario 1 - MITM Between Two Computers
-# =====================================================================
+# --- Scenario 1 Tab ---
 with tab1:
     st.subheader("Scenario 1: Man-in-the-Middle Between Computer A & Computer B")
     st.caption("Step through the attack lifecycle to see how ARP spoofing redirects traffic through the Attacker.")
 
-    # Custom Message Input
     s1_custom_msg = st.text_input(
         "💬 Custom Message to Send from Computer A:",
         value="Hello Umer! Secret Passcode: 9876",
         key="s1_custom_msg_input"
     )
 
-    # Control Buttons Row
     c1, c2, c3, c4, c5 = st.columns(5)
 
     with c1:
@@ -615,7 +581,6 @@ with tab1:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Animated Visualization Component
     col_vis, col_pkt = st.columns([3, 2])
 
     with col_vis:
@@ -663,7 +628,6 @@ with tab1:
     render_message_encryption_cards(pkt, scenario_type="computer_mitm")
     st.divider()
 
-    # Before & After ARP Table Comparison
     st.subheader("📋 ARP Table State (Before vs After Spoofing)")
     col_arp_a, col_arp_b = st.columns(2)
 
@@ -677,22 +641,17 @@ with tab1:
         df_arp_b = pd.DataFrame(sim.comp_b.get_arp_comparison())
         st.dataframe(df_arp_b, use_container_width=True, hide_index=True)
 
-
-# =====================================================================
-# TAB 2: Scenario 2 - Email Gateway Hijacking
-# =====================================================================
+# --- Scenario 2 Tab ---
 with tab2:
     st.subheader("Scenario 2: Email Hijacking via Gateway Spoofing")
     st.caption("Demonstrates how poisoning a victim's Gateway Router ARP entry allows the Attacker to intercept outbound emails.")
 
-    # Custom Email Composer
     col_s2_sub, col_s2_body = st.columns([1, 2])
     with col_s2_sub:
         s2_custom_sub = st.text_input("📧 Email Subject:", value="Q3 Payroll Draft", key="s2_custom_sub_input")
     with col_s2_body:
         s2_custom_body = st.text_input("📝 Email Body Payload:", value="Please disburse $50,000 team bonus.", key="s2_custom_body_input")
 
-    # Control Buttons Row
     e1, e2, e3, e4, e5 = st.columns(5)
 
     with e1:
@@ -764,7 +723,6 @@ with tab2:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Animated Email Viewport
     col_e_vis, col_e_pkt = st.columns([3, 2])
 
     with col_e_vis:
@@ -812,19 +770,14 @@ with tab2:
     render_message_encryption_cards(pkt_e, scenario_type="email_gateway")
     st.divider()
 
-    # Victim Gateway ARP Cache Inspection
     st.subheader("📋 Victim Gateway ARP Cache State (Before vs After)")
     df_arp_victim = pd.DataFrame(sim.email_victim.get_arp_comparison())
     st.dataframe(df_arp_victim, use_container_width=True, hide_index=True)
 
-
-# =====================================================================
-# TAB 3: Session Event Logs & Database
-# =====================================================================
+# --- Logs Tab ---
 with tab_logs:
     st.subheader("📜 Live Event Logs & Security Audit History")
 
-    # IDS Alerts Section
     st.write("##### 🚨 Intrusion Detection System (IDS) Alerts")
     alerts_list = logger.get_alerts()
     if alerts_list:
