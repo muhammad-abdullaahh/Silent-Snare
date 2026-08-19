@@ -5,10 +5,6 @@ from typing import List, Dict, Any, Optional
 
 
 class Packet:
-    """
-    Represents a network packet frame transferred between nodes.
-    Stores payload data, encryption state, and routing history.
-    """
 
     def __init__(
         self,
@@ -30,7 +26,6 @@ class Packet:
         self.scenario_type = scenario_type
         self.email_subject = email_subject
 
-        # Interception and security status
         self.is_tampered = False
         self.original_payload = payload
         self.status = "In-Transit"
@@ -38,16 +33,10 @@ class Packet:
         self.hop_history: List[str] = []
 
     def record_hop(self, node_name: str) -> None:
-        """Appends a node name to the routing path history."""
         self.hop_history.append(node_name)
 
     def tamper_payload(self, new_payload: str, attacker_name: str) -> bool:
-        """
-        Attempts to modify the packet payload.
-        Returns False if encryption prevents modification.
-        """
         if self.is_encrypted:
-            # TLS encryption prevents payload modification in transit
             return False
 
         if not self.is_tampered:
@@ -60,10 +49,6 @@ class Packet:
         return True
 
     def get_display_content(self) -> str:
-        """
-        Returns display text for UI views.
-        Shows ciphertext blob if payload is encrypted.
-        """
         if self.is_encrypted:
             digest = hashlib.sha256(self.payload.encode("utf-8")).hexdigest().upper()
             return f"🔒 AES-256-GCM Ciphertext:\n0x7F4A{digest[:32]}\n0x{digest[32:]}E9F1"
@@ -71,7 +56,6 @@ class Packet:
         return self.payload
 
     def to_dict(self) -> Dict[str, Any]:
-        """Converts packet fields to a dictionary for logging and tables."""
         return {
             "id": self.id,
             "timestamp": self.timestamp,

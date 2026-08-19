@@ -6,13 +6,11 @@ import streamlit as st
 import streamlit.components.v1 as components
 import pandas as pd
 
-# Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from core.simulator import SimulatorEngine
 from data.logs import EventLogger
 
-# Streamlit Page Setup
 st.set_page_config(
     page_title="SilentSnare - MITM Simulation Platform",
     page_icon="🛡️",
@@ -20,7 +18,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom Styling for Cyber Theme
 CUSTOM_CSS = """
 <style>
     .stApp {
@@ -61,13 +58,11 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
 @st.cache_resource
 def get_logger():
-    """Returns singleton EventLogger instance."""
     return EventLogger("data/silentsnare.db")
 
 
 logger = get_logger()
 
-# Initialize Streamlit Session State
 if "sim" not in st.session_state:
     st.session_state.sim = SimulatorEngine(logger=logger)
     st.session_state.active_packet = None
@@ -87,10 +82,6 @@ def render_animated_packet_diagram(
     trigger_id: int,
     action_type: str = "normal"
 ):
-    """
-    Renders the SVG diagram showing packet flows, ARP poisoning waves,
-    and payload modification alerts for both network scenarios.
-    """
     if scenario == "s1":
         node_a = {"label": "Computer A (Abdullah)", "x": 90, "y": 135, "color": "#10B981", "icon": "💻"}
         attacker = {"label": "Attacker (Anonymous)", "x": 300, "y": 45, "color": "#EF4444" if (path_type == "intercepted" or action_type == "spoof") else "#64748B", "icon": "🥷"}
@@ -146,7 +137,6 @@ def render_animated_packet_diagram(
             <text x="{server['x']}" y="{server['y']+40}" text-anchor="middle" fill="#E2E8F0" font-size="11" font-weight="bold">{server['label']}</text>
         """
 
-    # Action-specific Animation Overlays
     if action_type == "spoof":
         line_color = "#EF4444"
         line_style = "stroke-dasharray: 6; animation: dash 0.8s linear infinite;"
@@ -332,19 +322,12 @@ def render_animated_packet_diagram(
 
 
 def get_encrypted_hex_blob(payload: str) -> str:
-    """Generates an AES-256 ciphertext hex string representation for the UI."""
     h1 = hashlib.sha256(payload.encode("utf-8")).hexdigest().upper()
     h2 = hashlib.md5(payload.encode("utf-8")).hexdigest().upper()
     return f"0x7F4A{h1[:24]} 0x{h1[24:48]} 0x{h2}"
 
 
 def render_message_encryption_cards(pkt: Optional[Any], scenario_type: str = "computer_mitm"):
-    """
-    Renders 3 side-by-side inspection cards showing:
-    1. Sender Box (Client payload emission)
-    2. Network Box (Ciphertext / MITM In-Transit View)
-    3. Recipient Box (Decrypted or Tampered payload receipt)
-    """
     st.markdown("### 💬 Side-by-Side Message & Encryption Mechanism Inspector")
     col1, col2, col3 = st.columns(3)
 
@@ -365,7 +348,6 @@ def render_message_encryption_cards(pkt: Optional[Any], scenario_type: str = "co
     sender_label = "Computer A (Abdullah)" if scenario_type == "computer_mitm" else "Victim (Abdullah)"
     recipient_label = "Computer B (Umer)" if scenario_type == "computer_mitm" else "Mail Server (Umer)"
 
-    # Card 1: Sender Box
     with col1:
         st.markdown(f"""
         <div class="card-box" style="border-left: 4px solid #10B981;">
@@ -381,7 +363,6 @@ def render_message_encryption_cards(pkt: Optional[Any], scenario_type: str = "co
         </div>
         """, unsafe_allow_html=True)
 
-    # Card 2: Network & Encryption Box
     with col2:
         if is_enc:
             cipher_blob = get_encrypted_hex_blob(orig_msg)
@@ -429,7 +410,6 @@ def render_message_encryption_cards(pkt: Optional[Any], scenario_type: str = "co
             </div>
             """, unsafe_allow_html=True)
 
-    # Card 3: Recipient Box
     with col3:
         if is_enc:
             st.markdown(f"""
@@ -475,7 +455,6 @@ def render_message_encryption_cards(pkt: Optional[Any], scenario_type: str = "co
             """, unsafe_allow_html=True)
 
 
-# Application Main Banner
 st.markdown("""
 <div class="main-banner">
     <h1>🛡️ SilentSnare: MITM Attack Simulation</h1>
@@ -483,7 +462,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Sidebar Options
 st.sidebar.title("🎛️ Session Controls")
 
 if st.sidebar.button("🔄 Reset Entire Simulation", use_container_width=True):
@@ -500,14 +478,12 @@ st.sidebar.write(f"**S1 Packets Intercepted:** `{sim.s1_attacker.captured_count}
 st.sidebar.write(f"**S2 Packets Intercepted:** `{sim.s2_attacker.captured_count}`")
 st.sidebar.write(f"**IDS Alerts Fired:** `{len(sim.alerts)}`")
 
-# Navigation Tabs
 tab1, tab2, tab_logs = st.tabs([
     "💻 Scenario 1: MITM Between Two Computers",
     "📧 Scenario 2: Email Gateway Hijacking",
     "📜 Session Event Logs & Database"
 ])
 
-# --- Scenario 1 Tab ---
 with tab1:
     st.subheader("Scenario 1: Man-in-the-Middle Between Computer A & Computer B")
     st.caption("Step through the attack lifecycle to see how ARP spoofing redirects traffic through the Attacker.")
@@ -641,7 +617,6 @@ with tab1:
         df_arp_b = pd.DataFrame(sim.comp_b.get_arp_comparison())
         st.dataframe(df_arp_b, use_container_width=True, hide_index=True)
 
-# --- Scenario 2 Tab ---
 with tab2:
     st.subheader("Scenario 2: Email Hijacking via Gateway Spoofing")
     st.caption("Demonstrates how poisoning a victim's Gateway Router ARP entry allows the Attacker to intercept outbound emails.")
@@ -774,7 +749,6 @@ with tab2:
     df_arp_victim = pd.DataFrame(sim.email_victim.get_arp_comparison())
     st.dataframe(df_arp_victim, use_container_width=True, hide_index=True)
 
-# --- Logs Tab ---
 with tab_logs:
     st.subheader("📜 Live Event Logs & Security Audit History")
 

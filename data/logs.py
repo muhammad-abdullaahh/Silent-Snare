@@ -6,15 +6,10 @@ from typing import List, Dict, Any
 
 
 class EventLogger:
-    """
-    Handles in-memory log management and SQLite database persistence
-    for captured packets, security alerts, and system logs.
-    """
 
     def __init__(self, db_path: str = "data/silentsnare.db"):
         self.db_path = db_path
         
-        # Ensure target database directory exists
         db_dir = os.path.dirname(self.db_path)
         if db_dir:
             os.makedirs(db_dir, exist_ok=True)
@@ -26,17 +21,14 @@ class EventLogger:
         self.init_db()
 
     def get_connection(self) -> sqlite3.Connection:
-        """Returns a new SQLite database connection with row factory configured."""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
     def get_time_str(self) -> str:
-        """Returns formatted timestamp string."""
         return time.strftime("%Y-%m-%d %H:%M:%S")
 
     def init_db(self) -> None:
-        """Creates SQLite tables for packets, security alerts, and events if missing."""
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
@@ -82,7 +74,6 @@ class EventLogger:
             logging.error(f"Database initialization failed: {err}")
 
     def log_packet(self, packet_dict: Dict[str, Any]) -> None:
-        """Logs packet information into memory and SQLite database."""
         self.memory_packets.insert(0, packet_dict)
 
         try:
@@ -115,7 +106,6 @@ class EventLogger:
             logging.error(f"Failed to log packet to database: {err}")
 
     def log_alert(self, alert_dict: Dict[str, Any]) -> None:
-        """Logs security detection alert to memory and database."""
         self.memory_alerts.insert(0, alert_dict)
         try:
             with self.get_connection() as conn:
@@ -135,7 +125,6 @@ class EventLogger:
             logging.error(f"Failed to log alert to database: {err}")
 
     def log_event(self, category: str, message: str) -> None:
-        """Logs system operations into memory and database."""
         event_entry = {"timestamp": self.get_time_str(), "category": category, "message": message}
         self.memory_events.insert(0, event_entry)
         try:
@@ -150,19 +139,15 @@ class EventLogger:
             logging.error(f"Failed to log event to database: {err}")
 
     def get_packets(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Returns recent packet entries."""
         return self.memory_packets[:limit]
 
     def get_alerts(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Returns recent security alert entries."""
         return self.memory_alerts[:limit]
 
     def get_events(self, limit: int = 50) -> List[Dict[str, Any]]:
-        """Returns recent system log entries."""
         return self.memory_events[:limit]
 
     def clear_all_logs(self) -> None:
-        """Clears memory buffers and deletes database records."""
         self.memory_packets.clear()
         self.memory_alerts.clear()
         self.memory_events.clear()
